@@ -8,36 +8,33 @@ app.use(cors());
 const port = process.env.PORT || 10000;
 
 app.get('/scan-group', async (req, res) => {
-    const maxMembers = 10;
     const startTime = Date.now();
     let found = false;
     let groupData = null;
 
-    console.log("Iniciando busca por grupos abandonados...");
-
-    // O loop tenta encontrar o grupo ideal por até 15 segundos
-    while (!found && (Date.now() - startTime) < 15000) {
-        // Gera um ID aleatório entre 1M e 18M (faixa de grupos antigos e novos)
-        const randomId = Math.floor(Math.random() * (18000000 - 1000000)) + 1000000;
+    // O servidor vai "caçar" por até 25 segundos antes de dar timeout
+    while (!found && (Date.now() - startTime) < 25000) {
+        // Geramos IDs em faixas onde grupos costumam ser abandonados (5M a 18M)
+        const randomId = Math.floor(Math.random() * (18000000 - 5000000)) + 5000000;
 
         try {
-            // Chamada para a API do Roblox
-            const response = await axios.get(`https://groups.roblox.com/v1/groups/${randomId}`, { timeout: 2000 });
+            // Requisição ultra rápida para o Roblox
+            const response = await axios.get(`https://groups.roblox.com/v1/groups/${randomId}`, { timeout: 1200 });
             const data = response.data;
 
-            // --- OS FILTROS DO RYAN ---
-            const hasNoOwner = data.owner === null; // Sem proprietário
-            const isPublic = data.publicEntryAllowed === true; // Grupo aberto
-            const fewMembers = data.memberCount < maxMembers; // Menos de 10 membros
-            const isNotLocked = !data.isLocked; // Grupo não está banido/travado
+            // --- LÓGICA DE FILTRAGEM INTELIGENTE ---
+            const isAbandoned = data.owner === null; // Sem dono
+            const isJoinable = data.publicEntryAllowed === true; // Entrada livre
+            const isSmall = data.memberCount > 0 && data.memberCount < 10; // Poucos membros (mas não 0 para evitar bugs)
+            const isClean = !data.isLocked; // Não está banido
 
-            if (hasNoOwner && isPublic && fewMembers && isNotLocked) {
+            if (isAbandoned && isJoinable && isSmall && isClean) {
                 groupData = data;
                 found = true;
-                console.log(`Grupo encontrado! ID: ${randomId}`);
+                console.log(`✅ Grupo Alvo Encontrado: ${randomId}`);
             }
         } catch (e) {
-            // Se o grupo não existir (Erro 404), o loop continua silenciosamente
+            // Se o ID não existir ou a API do Roblox der erro, ele pula pro próximo na hora
             continue;
         }
     }
@@ -49,12 +46,9 @@ app.get('/scan-group', async (req, res) => {
             members: groupData.memberCount
         });
     } else {
-        // Se o tempo acabar e não achar, envia um erro para o main.js devolver os créditos
-        res.status(404).json({ error: "Nenhum grupo encontrado nos filtros. Tente de novo!" });
+        // Se a busca demorar muito, avisamos o site para tentar de novo sem cobrar créditos extras
+        res.status(408).json({ error: "A busca demorou demais. Tente novamente!" });
     }
 });
 
-// Rota de teste para saber se está online
-app.get('/', (req, res) => res.send("Servidor ROFREE Ativo e Filtrando!"));
-
-app.listen(port, () => console.log(`Servidor rodando na porta ${port}`));
+app.listen(port, () => console.log(`Caçador ROFREE ativo na porta ${port}`));
