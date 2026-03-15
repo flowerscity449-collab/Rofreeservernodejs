@@ -13,31 +13,48 @@ app.get('/scan-group', async (req, res) => {
     let found = false;
     let groupData = null;
 
-    // Ele vai tentar por até 4.5 segundos antes de desistir
-    while (!found && (Date.now() - startTime) < 4500) {
-        // IDs na faixa de 5M a 15M costumam ter muitos grupos abandonados
-        const randomId = Math.floor(Math.random() * (15000000 - 5000000)) + 5000000;
+    console.log("Iniciando busca por grupos abandonados...");
+
+    // O loop tenta encontrar o grupo ideal por até 15 segundos
+    while (!found && (Date.now() - startTime) < 15000) {
+        // Gera um ID aleatório entre 1M e 18M (faixa de grupos antigos e novos)
+        const randomId = Math.floor(Math.random() * (18000000 - 1000000)) + 1000000;
 
         try {
-            const response = await axios.get(`https://groups.roblox.com/v1/groups/${randomId}`, { timeout: 1000 });
+            // Chamada para a API do Roblox
+            const response = await axios.get(`https://groups.roblox.com/v1/groups/${randomId}`, { timeout: 2000 });
             const data = response.data;
 
-            // Filtro Ryan: Sem dono, entrada liberada e poucos membros
-            if (!data.owner && data.publicEntryAllowed === true && data.memberCount <= maxMembers) {
+            // --- OS FILTROS DO RYAN ---
+            const hasNoOwner = data.owner === null; // Sem proprietário
+            const isPublic = data.publicEntryAllowed === true; // Grupo aberto
+            const fewMembers = data.memberCount < maxMembers; // Menos de 10 membros
+            const isNotLocked = !data.isLocked; // Grupo não está banido/travado
+
+            if (hasNoOwner && isPublic && fewMembers && isNotLocked) {
                 groupData = data;
                 found = true;
+                console.log(`Grupo encontrado! ID: ${randomId}`);
             }
         } catch (e) {
-            // Ignora erros de ID inexistente e continua
+            // Se o grupo não existir (Erro 404), o loop continua silenciosamente
+            continue;
         }
     }
 
     if (found) {
-        res.json({ id: groupData.id, name: groupData.name });
+        res.json({
+            id: groupData.id,
+            name: groupData.name,
+            members: groupData.memberCount
+        });
     } else {
-        // Caso não ache nada no tempo limite, envia um ID que sabemos que está vazio (reserva)
-        res.json({ id: 1234567, name: "Tente novamente!" }); 
+        // Se o tempo acabar e não achar, envia um erro para o main.js devolver os créditos
+        res.status(404).json({ error: "Nenhum grupo encontrado nos filtros. Tente de novo!" });
     }
 });
 
-app.listen(port, () => console.log(`ROFREE Online na porta ${port}`));
+// Rota de teste para saber se está online
+app.get('/', (req, res) => res.send("Servidor ROFREE Ativo e Filtrando!"));
+
+app.listen(port, () => console.log(`Servidor rodando na porta ${port}`));
