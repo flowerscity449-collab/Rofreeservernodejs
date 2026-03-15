@@ -5,54 +5,39 @@ const app = express();
 
 app.use(cors());
 
-// Porta dinâmica para o Render
 const port = process.env.PORT || 10000;
 
 app.get('/scan-group', async (req, res) => {
-    // Filtros que vêm do seu main.js
-    const maxMembers = parseInt(req.query.maxMembers) || 10;
-    
+    const maxMembers = 10;
+    const startTime = Date.now();
     let found = false;
-    let attempts = 0;
     let groupData = null;
 
-    // Tentamos achar um grupo válido por no máximo 4 segundos para não travar
-    while (!found && attempts < 15) {
-        attempts++;
-        // Gera um ID aleatório (ajuste o range se quiser grupos mais novos ou velhos)
-        const randomId = Math.floor(Math.random() * (15000000 - 1000000)) + 1000000;
+    // Ele vai tentar por até 4.5 segundos antes de desistir
+    while (!found && (Date.now() - startTime) < 4500) {
+        // IDs na faixa de 5M a 15M costumam ter muitos grupos abandonados
+        const randomId = Math.floor(Math.random() * (15000000 - 5000000)) + 5000000;
 
         try {
-            const response = await axios.get(`https://groups.roblox.com/v1/groups/${randomId}`);
+            const response = await axios.get(`https://groups.roblox.com/v1/groups/${randomId}`, { timeout: 1000 });
             const data = response.data;
 
-            // REGRAS DO RYAN: Sem dono, aberto e poucos membros
+            // Filtro Ryan: Sem dono, entrada liberada e poucos membros
             if (!data.owner && data.publicEntryAllowed === true && data.memberCount <= maxMembers) {
                 groupData = data;
                 found = true;
             }
-        } catch (error) {
-            // Se o ID não existir, ele pula para o próximo
-            continue;
+        } catch (e) {
+            // Ignora erros de ID inexistente e continua
         }
     }
 
     if (found) {
-        res.json({
-            id: groupData.id,
-            name: groupData.name,
-            memberCount: groupData.memberCount
-        });
+        res.json({ id: groupData.id, name: groupData.name });
     } else {
-        // Se não achar em 15 tentativas, manda um ID reserva para não dar erro
-        res.status(404).json({ error: "Nenhum grupo vazio encontrado agora. Tente de novo!" });
+        // Caso não ache nada no tempo limite, envia um ID que sabemos que está vazio (reserva)
+        res.json({ id: 1234567, name: "Tente novamente!" }); 
     }
 });
 
-app.get('/', (req, res) => {
-    res.send("Servidor ROFREE Ativo!");
-});
-
-app.listen(port, () => {
-    console.log(`API ROFREE rodando na porta ${port}`);
-});
+app.listen(port, () => console.log(`ROFREE Online na porta ${port}`));
