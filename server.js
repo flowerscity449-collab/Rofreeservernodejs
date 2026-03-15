@@ -1,87 +1,58 @@
 const express = require('express');
-const app = express();
-const port = process.env.PORT || 10000; // O Render usa portas altas no plano free
-
-// ... resto do seu código ...
-
-app.listen(port, () => {
-  console.log(`ROFREE rodando na porta ${port}`);
-});
-
-app.use(cors()); // Permite que seu site ROFREE acesse esta API
-
-app.get('/scan-group', async (req, res) => {
-    const startId = req.query.startId || 1000000;
-    
-    // O Bot tenta checar 5 IDs por vez para não ser bloqueado
-    for (let i = 0; i < 5; i++) {
-        let currentId = parseInt(startId) + Math.floor(Math.random() * 1000);
-        
-        try {
-            const response = await axios.get(`https://groups.roblox.com/v1/groups/${currentId}`);
-            const group = response.data;
-
-            // CRITÉRIOS DO ROFREE:
-            // 1. Proprietário é null (Ninguém)
-            // 2. Menos de 10 membros
-            // 3. O grupo não está trancado (público para entrar)
-            if (group.owner === null && group.memberCount < 10 && group.isPublicEntryAllowed) {
-                return res.json({
-                    success: true,
-                    id: group.id,
-                    name: group.name,
-                    members: group.memberCount,
-                    owner: "Ninguém"
-                });
-            }
-        } catch (error) {
-            // Se o ID não existir, ele pula para o próximo
-            continue;
-        }
-    }
-    
-    res.json({ success: false, message: "Ainda procurando... Tente de novo!" });
-});
-
-app.listen(3000, () => console.log("API ROFREE rodando na porta 3000"));
-const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 const app = express();
 
-app.use(cors()); // Permite que seu site ROFREE acesse esta API
+app.use(cors());
+
+// Porta dinâmica para o Render
+const port = process.env.PORT || 10000;
 
 app.get('/scan-group', async (req, res) => {
-    const startId = req.query.startId || 1000000;
+    // Filtros que vêm do seu main.js
+    const maxMembers = parseInt(req.query.maxMembers) || 10;
     
-    // O Bot tenta checar 5 IDs por vez para não ser bloqueado
-    for (let i = 0; i < 5; i++) {
-        let currentId = parseInt(startId) + Math.floor(Math.random() * 1000);
-        
-        try {
-            const response = await axios.get(`https://groups.roblox.com/v1/groups/${currentId}`);
-            const group = response.data;
+    let found = false;
+    let attempts = 0;
+    let groupData = null;
 
-            // CRITÉRIOS DO ROFREE:
-            // 1. Proprietário é null (Ninguém)
-            // 2. Menos de 10 membros
-            // 3. O grupo não está trancado (público para entrar)
-            if (group.owner === null && group.memberCount < 10 && group.isPublicEntryAllowed) {
-                return res.json({
-                    success: true,
-                    id: group.id,
-                    name: group.name,
-                    members: group.memberCount,
-                    owner: "Ninguém"
-                });
+    // Tentamos achar um grupo válido por no máximo 4 segundos para não travar
+    while (!found && attempts < 15) {
+        attempts++;
+        // Gera um ID aleatório (ajuste o range se quiser grupos mais novos ou velhos)
+        const randomId = Math.floor(Math.random() * (15000000 - 1000000)) + 1000000;
+
+        try {
+            const response = await axios.get(`https://groups.roblox.com/v1/groups/${randomId}`);
+            const data = response.data;
+
+            // REGRAS DO RYAN: Sem dono, aberto e poucos membros
+            if (!data.owner && data.publicEntryAllowed === true && data.memberCount <= maxMembers) {
+                groupData = data;
+                found = true;
             }
         } catch (error) {
             // Se o ID não existir, ele pula para o próximo
             continue;
         }
     }
-    
-    res.json({ success: false, message: "Ainda procurando... Tente de novo!" });
+
+    if (found) {
+        res.json({
+            id: groupData.id,
+            name: groupData.name,
+            memberCount: groupData.memberCount
+        });
+    } else {
+        // Se não achar em 15 tentativas, manda um ID reserva para não dar erro
+        res.status(404).json({ error: "Nenhum grupo vazio encontrado agora. Tente de novo!" });
+    }
 });
 
-app.listen(3000, () => console.log("API ROFREE rodando na porta 3000"));
+app.get('/', (req, res) => {
+    res.send("Servidor ROFREE Ativo!");
+});
+
+app.listen(port, () => {
+    console.log(`API ROFREE rodando na porta ${port}`);
+});
